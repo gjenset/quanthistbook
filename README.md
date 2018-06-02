@@ -1,5 +1,5 @@
 # quanthistbook
-Code and data used for research experiments in Jenset &amp; McGillivray (2018) ``Quantitative Historical Linguistics: A Corpus Framework.'' Oxford: Oxford University Press.
+Code and data used for research in Jenset &amp; McGillivray (2018) ``Quantitative Historical Linguistics: A Corpus Framework.'' Oxford: Oxford University Press.
 
 The material is organised in sub-folders as follows:
 
