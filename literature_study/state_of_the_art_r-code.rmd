@@ -1,0 +1,199 @@
+---
+title: "State of the art chapter - R code"
+author: "Gard Jenset"
+date: "Sunday, December 13, 2015"
+output: html_document
+---
+
+This documents the statistical calculations on the state of the art analysis in chapter 2.
+
+# The chi-square test of the full data
+
+This test shows the relationship between corpus methods and quantitative methods in the historical-diachronic sample.
+
+Build data matrix for chi-square:
+
+```{r}
+hd = matrix(c(33, 4, 11, 14), nrow=2)
+rownames(hd) = c("Not corpus-based", "Corpus-based")
+colnames(hd) = c("Qualitative", "Quantitative")
+hd
+```
+
+Perform chi-square test and get Cramer V:
+
+```{r}
+chisq.test(hd)
+source("cramer.r")
+cv.test(hd)
+```
+
+# Calculate 95% confidence intervals
+
+This section calculates 95% confidence intervals for the two proportions of quantitative data from the two samples (0.4 in the historical-diachronic sample, and 0.8 for Language).
+
+Define a function to calculate the confidence interval:
+
+```{r}
+# pbar: proportion, i.e. point estimate
+# n: number of observations
+conf_int = function(pbar, n){
+  SE = sqrt(pbar*(1-pbar)/n) # standard error
+  E = qnorm(.975)*SE  # error margin
+  pbar + c(-E, E) # confidence interval
+}
+```
+
+Calculate intervals:
+
+```{r}
+# Language sample:
+conf_int(pbar=0.8, n=15)
+
+# historical sample:
+conf_int(pbar=0.4, n=62)
+
+```
+
+# Test difference
+
+We can use prop.test to formally establish that the proportions are signficantly different:
+
+```{r}
+# x=25: the number of quantitative papers in the historical sample
+# n=62: the size of the historical sample
+# p=0.8: the estimate of quantitative methods from Language
+prop.test(x=25, n=62, p=0.8)
+```
+
+# MCA analysis
+
+This section reports the MCA analysis of journals and methods.
+
+Read full data and process
+```{r}
+meta = read.table("metastudy assessments.csv", header=T,sep="\t")
+
+# drop some rows that are not linguistic / historical
+meta2 = meta[-c(6, 26 ),]
+meta2 = droplevels(meta2)
+
+# set colnames
+colnames(meta2) = c("assessor","journal","volume","issue","pages","evidence","corpusbased","quantitative","frequencies_are_just_mentioned","annotation","enriched","size_of_dataset_is_defined","additional_variables","hypothesis_mentioned","type_or_token_frequencies","data_availability","wordlists","Stat.tech","absolute_frequencies","percentages","basic_null_hypothesis_tests","linear_regresssion","philogenetic_trees","PCA","Comment")
+
+meta2$neutral = ifelse(meta2$Comment == "Grammar writing, not really linguistic" |
+meta2$Comment == "Mainly methodological" | meta2$Comment == "methodological paper" | meta2$Comment == "Theoretical overivew" |
+meta2$Comment == "Theoretical paper", T, F)
+
+meta3 = meta2[meta2$neutral == F | is.na(meta2$neutral),]
+meta3 = droplevels(meta3)
+```
+
+Perform MCA analysis:
+
+```{r}
+library(ca)
+meta_journ.ca = mjca(meta3[,c(2, 7, 8) ])
+summary(meta_journ.ca)
+plot(meta_journ.ca, map="symbiplot", mass=T, xlab="Dim 1: 90.9%", ylab="Dim 2: 0.8%", pch=16, col=c("gray","gray"), main="MCA plot, methods and journals")
+box()
+```
+
+
+# Proportion test of reduced historical sample
+
+If exclude "Language Variation and Change" from the historical sample, we can repeat the prop.test from above and compare the proportions of **corpus data use**, and find that the two samples are still different:
+
+```{r}
+# x=11: the number of corpus-based papers in the historical sample (no LVC)
+# n=50: the size of the historical sample (no LVC)
+# p=0.4: the estimate of corpus-use from Language
+prop.test(x=11, n=50, p=0.4)
+```
+
+# Confidence intervals around corpus-use estimates
+
+Here we see that if we take the 0.4 estimate of corpus-use from the 15 article sample from Language as a point estimate, the confidence interval overlaps with that of the reduced historical sample. However, the confidence interval **distributions** are clearly different:
+
+```{r}
+# empty plotting canvas:
+plot(x=c(0,0.8), y=c(0,4.5), type="n", xlab="Probability", ylab="Density")
+
+# confidence interval language:
+lang_ci = conf_int(pbar=0.4, n=15)
+# confidence interval reduce historical sample:
+hist_ci = conf_int(pbar=0.22, n=50)
+
+# calculate probability densities:
+density_language = density(seq(from=lang_ci[1], to=lang_ci[2], by=0.01))
+density_hist = density(seq(from=hist_ci[1], to=hist_ci[2], by=0.01))
+
+# add distributions to plot:
+lines(density_language, lty=1, lwd=2, col="darkgray")
+lines(density_hist, lty=2, lwd=2, col="darkgray")
+
+# add legend:
+legend("topright", inset=0.05, legend=c("Language", "Historical linguistics"), lty=c(1, 2), lwd=2, col="darkgray")
+
+```
+
+Write plot above to file:
+
+```{r}
+pdf("conf_int_corpus_based.pdf")
+# empty plotting canvas:
+plot(x=c(0,0.8), y=c(0,4.5), type="n", xlab="Probability", ylab="Density")
+
+# add distributions to plot:
+lines(density_language, lty=1, lwd=2, col="darkgray")
+lines(density_hist, lty=2, lwd=2, col="darkgray")
+
+# add legend:
+legend("topright", inset=0.05, legend=c("Language", "Historical linguistics"), lty=c(1, 2), lwd=2, col="darkgray")
+dev.off()
+
+```
+
+# Methods in the two samples
+
+Create a barplot of different quantitative techniques used in the sample, broken down by whether or not the technique was used in Language Variation and Change.
+
+
+```{r}
+quant.papers = meta3[meta3$quantitative==T,]
+quant.papers = droplevels(quant.papers)
+quant.papers$lvc = ifelse(quant.papers$journal=="LangVarChange", T, F)
+qp.freq = xtabs(~lvc + absolute_frequencies, quant.papers)
+qp.prop = xtabs(~lvc + percentages, quant.papers)
+qp.nhts = xtabs(~lvc + basic_null_hypothesis_tests, quant.papers)
+qp.linmod = xtabs(~lvc + linear_regresssion, quant.papers)
+qp.trees = xtabs(~lvc + philogenetic_trees, quant.papers)
+qp.pca = xtabs(~lvc + PCA, quant.papers)
+
+# bind together as matrix
+methods.x = matrix(
+              c(qp.linmod[1,2], 
+              qp.linmod[2,2], 
+              qp.freq[1,2], 
+              qp.freq[2,2], 
+              qp.prop[1,2], 
+              qp.prop[2,2], 
+              qp.nhts[1,2], 
+              qp.nhts[2,2], 
+              qp.trees[1,2], 
+              qp.trees[2,2], 
+              qp.pca[1,2],
+              qp.pca[2,2]),
+              nrow=2
+              )
+rownames(methods.x) = c("Other", "LVC")
+colnames(methods.x) = c("Linear models", "Freq", "%", "NHT", "Trees", "PCA")
+# barplot
+barplot(methods.x, names.arg= colnames(methods.x), legend.text=rownames(methods.x))
+
+pdf("methods_barplot_journals.pdf")
+barplot(methods.x, names.arg= colnames(methods.x), legend.text=rownames(methods.x))
+dev.off()
+```
+
+

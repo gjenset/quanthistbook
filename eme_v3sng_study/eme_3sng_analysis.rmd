@@ -1,0 +1,284 @@
+---
+title: "s-th -- EME"
+author: "Gard Jenset"
+date: "Sunday, December 20, 2015"
+output: html_document
+---
+
+```{r}
+library(arm)
+library(Hmisc)
+# script for Nagelkerke's R2
+# source("pseudoR2_2-0.r")
+
+```
+
+# Read data
+
+```{r}
+eme.raw = read.table('eme_3sg_data_15112015a.txt', header=T, sep='\t', quote="\"", fill=T)
+eme.raw = eme.raw[eme.raw$filename != "later countess of Halifax",]
+eme = na.omit(eme.raw)
+eme = droplevels(eme)
+eme$year = as.numeric(as.character(eme$year))
+eme$yearGroup = cut2(eme$year, g=20, levels.mean=T)
+eme$female = ifelse(eme$authorGender == "F", T, F)
+eme$infs = ifelse(eme$suffix3sg == "s", T, F)
+eme$lemma_len = nchar(as.character(eme$lemma))
+```
+
+# Plot over time
+
+```{r}
+s = eme[eme$suffix3sg == "s",]
+s = droplevels(s)
+th = eme[eme$suffix3sg == "th",]
+th = droplevels(th)
+par(mfrow=c(1,2))
+plot(s$year, log10(s$subPeriodCount), col="grey", main="-s", xlab="Year", ylab="Verb frequency (base 10 log scale)")
+lines(lowess(log10(s$subPeriodCount)~s$year), col="red", lwd = 3)
+plot(th$year, log10(th$subPeriodCount), col="grey", main="-th", xlab="Year", ylab="Verb frequency (base 10 log scale)")
+lines(lowess(log10(th$subPeriodCount)~th$year), col="red", lwd=3)
+
+pdf("s-th_lowess_time.pdf")
+par(mfrow=c(1,2))
+plot(s$year, log10(s$subPeriodCount), col="grey", main="-s", xlab="Year", ylab="Verb frequency (base 10 log scale)")
+lines(lowess(log10(s$subPeriodCount)~s$year), col="black", lwd = 3)
+plot(th$year, log10(th$subPeriodCount), col="grey", main="-th", xlab="Year", ylab="Verb frequency (base 10 log scale)")
+lines(lowess(log10(th$subPeriodCount)~th$year), col="black", lwd=3)
+dev.off()
+
+par(mfrow=c(1,1))
+```
+The plots show that the s form becomes more common over time (left plot), while the th form becomes less common over time (right plot), which we knew already.
+In addition the left plot shows that for the s forms, there isn't much change associated with lemma frequency over time because both the frequent and the infrequent verbs adopt it increasingly over time.
+However, the right plot shows that for the th forms there is change associated with lemma frequency over time because the th-form is becoming more and more limited to high-frequency verbs.
+
+So we can conclude that we expect that over time the th form becomes more limited to high-frequency verbs.
+
+# Plot S-curve
+
+```{r}
+cdplot(eme$suffix3sg ~ eme$year, xlab="Year", ylab="Suffix")
+
+pdf("cdplot_suffix_time.pdf")
+cdplot(eme$suffix3sg ~ eme$year, xlab="Year", ylab="Suffix")
+dev.off()
+```
+
+# MCA
+
+```{r}
+library(ca)
+library(dplyr)
+eme.mca = mjca(eme[, c(11, 14, 2, 16)])
+plot(eme.mca, map="rowgreen", xlab="Dimension 1: 71.5%", ylab="Dimension 2: 1.8%", col=c("black", "darkgray"))
+summary(eme.mca)
+
+pdf("s-th_MCA_plot.pdf")
+plot(eme.mca, map="rowgreen", xlab="Dimension 1: 71.5%", ylab="Dimension 2: 1.8%", col=c("black", "darkgray"))
+dev.off()
+
+```
+
+# Count female authors by period
+
+```{r}
+library(xtable)
+fem.x = xtabs(~female+period, eme)
+xtable(fem.x, digits=0)
+
+prop.table(fem.x)
+
+```
+
+# 3 models by period
+
+This is the best approach and the models we will properly report on.
+
+## Get necessary functions
+
+```{r}
+library(arm)
+library(rms)
+# Script for generating summary table:
+# source("binom_glmm_table_2.0.r")
+# script for Nagelkerke's R2
+# source("pseudoR2_2-0.r")
+
+```
+
+## Create the datasets
+
+```{r}
+period1 = eme[eme$period == "e1",]
+period1 = droplevels(period1)
+
+period2 = eme[eme$period == "e2",]
+period2 = droplevels(period2)
+
+period3 = eme[eme$period == "e3",]
+period3 = droplevels(period3)
+```
+
+## Period E1
+
+Create the model:
+```{r}
+glmer.p1 = glmer(infs ~ (1|genre) + I(log10(subPeriodCount))  + verbTag, data = period1, family = binomial)
+ 
+binnedplot(fitted(glmer.p1), resid(glmer.p1), xlab="Estimated probability of \"-s\"")
+summary(glmer.p1)
+
+```
+
+Generate the outputs below.
+
+Summary table:
+```{r}
+table.glmm(glmer.p1)
+
+```
+
+Write binnedplot to file:
+```{r}
+pdf("E1_period_binned_plot.pdf")
+binnedplot(fitted(glmer.p1), resid(glmer.p1), xlab="Estimated probability of \"-s\"")
+dev.off()
+```
+
+Calculate R^2:
+```{r}
+lmer.r2(f = c("infs ~ I(log10(subPeriodCount)) + verbTag", "(1 | genre)"), d = period1)
+
+```
+
+Calculate Harrel's C:
+```{r}
+p.e1 = 1/(1+exp(-fitted(glmer.p1)))
+somers2(p.e1, as.numeric(period1$infs))
+```
+
+## Period E2
+
+Create the model:
+```{r}
+
+glmer.p2 = glmer(infs ~ (1|genre) + I(log10(subPeriodCount)) + female + context + verbTag, data = period2, family = binomial)
+binnedplot(fitted(glmer.p2), resid(glmer.p2), xlab="Estimated probability of \"-s\"")
+summary(glmer.p2)
+```
+
+Generate the outputs below.
+
+Summary table:
+```{r}
+table.glmm(glmer.p2)
+
+```
+
+Write binnedplot to file:
+```{r}
+pdf("E2_period_binned_plot.pdf")
+binnedplot(fitted(glmer.p2), resid(glmer.p2), xlab="Estimated probability of \"-s\"")
+dev.off()
+```
+
+Calculate R^2:
+```{r}
+lmer.r2(f = c("infs ~ I(log10(subPeriodCount)) + female + context + verbTag", "(1 | genre)"), d = period2)
+
+```
+
+Calculate Harrel's C:
+```{r}
+p.e2 = 1/(1+exp(-fitted(glmer.p2)))
+somers2(p.e2, as.numeric(period2$infs))
+```
+
+Calculate CI for random effect:
+
+```{r}
+# genre
+plogis(qnorm(c(0.025, 0.975), mean=summary(glmer.p2)$coefficients[1,1], sd=sqrt(summary(glmer.p2)$varcor$genre)))
+```
+
+
+
+## Period E3
+
+Create the model:
+```{r}
+glmer.p3 = glmer(infs ~ (1|genre) + I(log10(subPeriodCount)) + female + verbTag, data = period3, family = binomial)
+binnedplot(fitted(glmer.p3), resid(glmer.p3), xlab="Estimated probability of \"-s\"")
+summary(glmer.p3)
+```
+
+Generate the outputs below.
+
+Summary table:
+```{r}
+table.glmm(glmer.p3)
+
+```
+
+Write binnedplot to file:
+```{r}
+pdf("E3_period_binned_plot.pdf")
+binnedplot(fitted(glmer.p3), resid(glmer.p3), xlab="Estimated probability of \"-s\"")
+dev.off()
+```
+
+Calculate R^2:
+```{r}
+lmer.r2(f = c("infs ~ I(log10(subPeriodCount)) + female + verbTag", "(1 | genre)"), d = period3)
+
+```
+
+Calculate Harrel's C:
+```{r}
+p.e3 = 1/(1+exp(-fitted(glmer.p3)))
+somers2(p.e3, as.numeric(period3$infs))
+```
+
+Calculate CI for random effect:
+
+```{r}
+# genre
+plogis(qnorm(c(0.025, 0.975), mean=summary(glmer.p3)$coefficients[1,1], sd=sqrt(summary(glmer.p3)$varcor$genre)))
+```
+
+# A bad model
+
+```{r}
+
+mod_bad= glmer(infs ~ (1|genre) + I(log10(subPeriodCount)) + period + female + context + verbTag, data = eme, family = binomial)
+
+# binned resid plot
+binnedplot(fitted(mod_bad), resid(mod_bad), xlab="Estimated probability of \"-s\"")
+
+# Write binned plot file
+pdf("bad_binned_plot.pdf")
+binnedplot(fitted(mod_bad), resid(mod_bad), xlab="Estimated probability of \"-s\"")
+dev.off()
+
+summary(mod_bad)
+```
+
+
+Table output:
+```{r}
+table.glmm(mod_bad)
+
+```
+
+R^2:
+```{r}
+lmer.r2(f = c("infs ~ I(log10(subPeriodCount)) + period + female + context + verbTag", "(1 | genre)"), d = eme)
+```
+
+Harrel's C:
+```{r}
+p.bad = 1/(1+exp(-fitted(mod_bad)))
+somers2(p.bad, as.numeric(eme$infs))
+```

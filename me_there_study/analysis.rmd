@@ -1,0 +1,301 @@
+---
+title: "EC analysis"
+author: "Gard Jenset"
+date: "Sunday, December 11, 2016"
+output: html_document
+---
+
+# Read data
+
+```{r}
+me.ex <- read.table("me_there_07122016.txt", header=T, sep="\t")
+
+# create log-transformed version of tree depth
+me.ex$logMaxDepth <- log10(me.ex$maxDepth)
+
+# create re-scaled year variable
+me.ex$msDate50 <- me.ex$msDate/50
+
+dim(me.ex)
+summary(me.ex)
+```
+
+
+
+# Show relationship between constructional strength and T1/Ø
+```{r}
+set.seed(123)
+plot(jitter(me.ex$msDate, 25), jitter(me.ex$nextProb, 3), pch = as.numeric(me.ex$emptyExpletive)+16, col=as.numeric(me.ex$emptyExpletive)+40, ylab="Conditional probability of next element", xlab="MS date", main="")
+legend("topright", inset=0.05, legend=c("There", "Ø"), pch=c(16,17), col=c("gray", "black"))
+
+# write image to file
+pdf("ME_nextprod_by_date.pdf")
+set.seed(123)
+plot(jitter(me.ex$msDate, 25), jitter(me.ex$nextProb, 3), pch = as.numeric(me.ex$emptyExpletive)+16, col=as.numeric(me.ex$emptyExpletive)+40, ylab="Conditional probability of next element", xlab="MS date", main="")
+legend("topright", inset=0.05, legend=c("There", "Ø"), pch=c(16,17), col=c("gray", "black"))
+dev.off()
+
+```
+
+# Show distribution of subjects over time
+
+```{r}
+cdplot(as.factor(emptyExpletive)~msDate, data = me.ex, yaxlabels=c("There", "Ø"), xlab="MS date", ylab="Existential subject", main="Existential subject realisation")
+
+# write image to file
+pdf("ME_cdplot_subject_by_date_2.pdf")
+cdplot(as.factor(emptyExpletive)~msDate, data = me.ex, yaxlabels=c("There", "Ø"), xlab="MS date", ylab="Existential subject", main="Existential subject realisation")
+dev.off()
+
+```
+
+
+
+# Show numeric variables by dialect
+
+```{r}
+library(lattice)
+xyplot(v1prop ~ msDate | dialect, data = me.ex, main="V1") 
+xyplot(v2prop ~ msDate | dialect, data = me.ex, main="V2")
+xyplot(nextProb ~ msDate | dialect, data = me.ex, main="Context")
+xyplot(emptyExpletive ~ jitter(msDate) | dialect, data = me.ex, pch=16)
+
+```
+
+# Show response by dialect
+
+```{r}
+dialect_s.x <- xtabs(~emptyExpletive + dialect, me.ex)
+barplot(dialect_s.x[,c("East Midlands", "West Midlands", "Southern", "Kentish", "Northern")], beside=T, legend.text=c("There", "Ø"), main="Existential subject by dialect", names.arg=c("East\nMidlands", "West\nMidlands", "Southern", "Kentish", "Northern"))
+# text(cex=1, x=bx, y=-125, c("East Midlands", "West Midlands", "Southern", "Kentish", "Northern"), xpd=TRUE, srt=45)
+
+pdf("barplot_dialect_subject.pdf")
+barplot(dialect_s.x[,c("East Midlands", "West Midlands", "Southern", "Kentish", "Northern")], beside=T, legend.text=c("There", "Ø"), main="Existential subject by dialect", names.arg=c("East\nMidlands", "West\nMidlands", "Southern", "Kentish", "Northern"))
+dev.off()
+```
+
+# Show response by genre
+
+```{r}
+genre_s.x <- xtabs(~emptyExpletive + genre, me.ex)
+barplot(genre_s.x[,c("Religious Treatise", "History", "Homily", "Romance", "Travelogue", "Sermon", "Rule", "Fiction", "Biography, Life of Saint", "Bible", "Handbook", "Philosophy")], beside=T, legend.text=c("There", "Ø"), main="Existential subject by genre", names.arg=c("Religious\nTreatise", "History", "Homily", "Romance", "Travelogue", "Sermon", "Rule", "Fiction", "Biography", "Bible", "Handbook", "Philosophy"), las=2)
+
+
+pdf("barplot_genre_subject.pdf")
+barplot(genre_s.x[,c("Religious Treatise", "History", "Homily", "Romance", "Travelogue", "Sermon", "Rule", "Fiction", "Biography, Life of Saint", "Bible", "Handbook", "Philosophy")], beside=T, legend.text=c("There", "Ø"), main="Existential subject by genre", names.arg=c("Religious\nTreatise", "History", "Homily", "Romance", "Travelogue", "Sermon", "Rule", "Fiction", "Biography", "Bible", "Handbook", "Philosophy"), las=2)
+dev.off()
+```
+
+# Try a simple logistic regression model as a baseline
+
+Load packages and scripts:
+
+```{r}
+library(rms)
+library(arm)
+# script for Nagelkerke's R2
+source("C:\\Users\\gbj\\Documents\\BACKUP\\R\\pseudoR2_2-0.r")
+```
+
+
+Scale proportion data:
+
+```{r}
+me.ex$nextProb01 <- me.ex$nextProb/0.1
+me.ex$v1prop01 <- me.ex$v1prop/0.1
+me.ex$v2prop01 <- me.ex$v2prop/0.1
+
+```
+
+Data without NA's:
+
+```{r}
+me.ex.nona <- na.omit(me.ex)
+me.ex.nona <- droplevels(me.ex.nona)
+dim(me.ex.nona)
+nrow(me.ex) - nrow(me.ex.nona)  # this should equal 67
+```
+
+
+```{r}
+fit0 <- lrm(emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 + v2prop01 + dialect + genre + msDate50, data = me.ex.nona)
+fit0
+fit0b <- glm(emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 + v2prop01 + dialect + genre + msDate50, data = me.ex.nona, family="binomial")
+binnedplot(fitted(fit0b), resid(fit0b), main="fit 0 (glm)")
+summary(fit0b)
+```
+
+
+# Do an lmer analysis
+
+
+
+The model below converges, but the binned residuals plot indicates that the fit isn't great. However, the C-index is 0.85. The full model against a mixed intercept model gives a Nagelkerke R^2 of 0.99.
+
+
+```{r}
+# not converging:
+# glmer(emptyExpletive ~  nextProb + v1prop + v2prop + mainV1 + mainV2 + period + (1 | dialect) + (1 | genre ), data = me.ex, family=binomial)
+# ---
+# glmer(emptyExpletive ~  nextProb + v1prop + v2prop + mainV1 + mainV2 + msDate + (1 | dialect) + (1 | genre ), data = me.ex, family=binomial)
+# ---
+# glmer(emptyExpletive ~  nextProb + logMaxDepth + v1prop + v2prop + mainV1 + mainV2 + genre + (1 | dialect) + (1 | period ), data = me.ex.nona, family=binomial)
+
+fit1 <- glmer(emptyExpletive ~  nextProb + logMaxDepth + v1prop + v2prop + mainV1 + mainV2 + (1 | dialect) + (1 | period ) + (1|genre), data = me.ex.nona, family=binomial)
+
+summary(fit1)
+
+# check fit:
+binnedplot(fitted(fit1), resid(fit1), main="Fit 1")
+
+# Pseudo-R^2
+# lmer.r2(f = c("emptyExpletive ~  nextProb + logMaxDepth + v1prop + v2prop + mainV1 + mainV2", "(1 | dialect) + (1 | period ) + (1|genre)"), d=me.ex.nona)
+
+# C-index
+p1 = 1/(1+exp(-fitted(fit1)))
+somers2(p1, as.numeric(me.ex.nona$emptyExpletive))
+
+```
+
+
+Try simplifying the data variable:
+
+```{r}
+me.ex.nona$before1230 <- ifelse(me.ex.nona$msDate <= 1230, TRUE, FALSE)
+summary(me.ex.nona$over1230)
+tapply(me.ex.nona$msDate, me.ex.nona$before1230, mean)
+```
+
+Fit a slightly simplified model:
+
+```{r}
+fit2 <- glmer(emptyExpletive ~  nextProb + logMaxDepth + v1prop + v2prop + mainV1 + mainV2 + before1230 + (1 | dialect) + (1 | genre ), data = me.ex.nona, family=binomial)
+
+summary(fit2)
+
+# check fit:
+binnedplot(fitted(fit2), resid(fit2), main="Fit 2")
+
+# Pseudo-R^2
+# lmer.r2(f = c("emptyExpletive ~  nextProb + v1prop + v2prop + mainV1 + mainV2 + before1230", "(1 | dialect) + (1 | genre )"), d=me.ex.nona)
+
+# C-index
+p2 = 1/(1+exp(-fitted(fit2)))
+somers2(p2, as.numeric(me.ex.nona$emptyExpletive))
+```
+
+Try with interaction:
+
+```{r}
+fit3 <- glmer(emptyExpletive ~  nextProb + logMaxDepth + v1prop * mainV1 + v2prop + mainV2 + (1 | dialect) + (1 | period ) + (1|genre), data = me.ex.nona, family=binomial)
+
+summary(fit3)
+
+# check fit:
+binnedplot(fitted(fit3), resid(fit3), main="Fit 3")
+
+# Pseudo-R^2
+# lmer.r2(f = c("emptyExpletive ~  nextProb + logMaxDepth + v1prop + v2prop + mainV1 + mainV2", "(1 | dialect) + (1 | period ) + (1|genre)"), d=me.ex.nona)
+
+# C-index
+p3 = 1/(1+exp(-fitted(fit3)))
+somers2(p3, as.numeric(me.ex.nona$emptyExpletive))
+```
+
+
+```{r}
+fit4a <- glmer(emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 * v2prop01 + (1 | dialect) + (1 | period ) + (1|genre), data = me.ex.nona, family=binomial)
+
+
+fit4b <- glmer(emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 + v2prop01 + (1 | dialect) + (1 | period ) + (1|genre), data = me.ex.nona, family=binomial)
+
+anova(fit4a, fit4b, test="Chi")
+# there's a significant difference between the two -- 4a is better
+
+summary(fit4a)
+
+# check fit:
+binnedplot(fitted(fit4a), resid(fit4a), main="Fit 4")
+
+# Pseudo-R^2
+lmer.r2(f = c("emptyExpletive ~  nextProb + logMaxDepth + I(v1prop/0.1) + I(v2prop/0.1)", "(1 | dialect) + (1 | period ) + (1|genre)"), d=me.ex.nona)
+
+# C-index
+p4 = 1/(1+exp(-fitted(fit4a)))
+somers2(p4, as.numeric(me.ex.nona$emptyExpletive))
+```
+
+Try dialect and genre as a fixed effects:
+
+```{r}
+# 'genre' as fixed effect doesn't converge
+# 'dialect' as fixed effect doesn't converge
+fit5 <- glmer(emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 * v2prop01 + msDate + (1|genre) + (1 | dialect ), data = me.ex.nona, family=binomial)
+
+anova(fit4a, fit5, test="Chi")
+# there's no difference between the two = prefer the simpler fit5
+
+summary(fit5)
+
+# check fit:
+binnedplot(fitted(fit5), resid(fit5), main="Fit 5")
+
+# C-index
+p5 = 1/(1+exp(-fitted(fit5)))
+somers2(p5, as.numeric(me.ex.nona$emptyExpletive))
+
+# Pseudo-R^2
+lmer.r2(f = c("emptyExpletive ~  nextProb01 + logMaxDepth + v1prop01 * v2prop01", "(1 | period ) + (1|genre)"), d=me.ex.nona)
+
+
+```
+
+
+
+## calculate spread around intercept
+
+```{r}
+# for dialect
+plogis(qnorm(c(0.025, 0.975), mean=summary(fit4a)$coefficients[1,1], sd=sqrt(summary(fit4a)$varcor$dialect)))
+
+# for period
+plogis(qnorm(c(0.025, 0.975), mean=summary(fit4a)$coefficients[1,1], sd=sqrt(summary(fit4a)$varcor$period)))
+
+# for genre
+plogis(qnorm(c(0.025, 0.975), mean=summary(fit4a)$coefficients[1,1], sd=sqrt(summary(fit4a)$varcor$genre)))
+```
+
+
+
+# Summary
+
+None of the GLMM models can beat the basic glm model:
+
+* C index is virtually identical
+* residuals plot show better fit with the glm
+
+```{r}
+# generate table
+source("binom_glmm_table_3.0.r")
+
+# for inspection:
+# table.glmm(fit4a, "md")
+table.glmm(fit0b, "md")
+```
+
+For use in book:
+
+```{r, comment=""}
+# table.glmm(fit4a, "tex")
+table.glmm(fit0b, "tex")
+```
+
+Write binned plot to file:
+
+```{r}
+pdf("binnedplot_glm0.pdf")
+binnedplot(fitted(fit0b), resid(fit0b), main="Binned residuals")
+dev.off()
+
+```
+
